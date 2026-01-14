@@ -1,0 +1,221 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-dark-border;
+  }
+
+  body {
+    @apply bg-dark-bg text-dark-text-primary;
+    @apply font-mono antialiased;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+}
+
+@layer components {
+  /* Button styles */
+  .btn {
+    @apply px-4 py-2 rounded-md font-medium transition-colors duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-dark-bg;
+  }
+
+  .btn-primary {
+    @apply bg-dark-accent-blue text-white;
+    @apply hover:bg-blue-600 focus:ring-dark-accent-blue;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-dark-surface text-dark-text-primary border border-dark-border;
+    @apply hover:bg-dark-hover focus:ring-dark-border;
+  }
+
+  /* Card styles */
+  .card {
+    @apply bg-dark-surface border border-dark-border rounded-lg p-6;
+    @apply shadow-lg;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300;
+    @apply hover:border-dark-accent-blue/50 hover:shadow-xl hover:shadow-dark-accent-blue/10;
+    @apply hover:-translate-y-1;
+  }
+
+  /* Input styles */
+  .input {
+    @apply w-full px-4 py-2 rounded-md;
+    @apply bg-dark-surface border border-dark-border;
+    @apply text-dark-text-primary placeholder-dark-text-muted;
+    @apply focus:outline-none focus:ring-2 focus:ring-dark-accent-blue focus:border-transparent;
+    @apply transition-all duration-200;
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-dark-accent-green/20 text-dark-accent-green;
+  }
+
+  .badge-warning {
+    @apply bg-dark-accent-yellow/20 text-dark-accent-yellow;
+  }
+
+  .badge-danger {
+    @apply bg-dark-accent-red/20 text-dark-accent-red;
+  }
+
+  .badge-info {
+    @apply bg-dark-accent-blue/20 text-dark-accent-blue;
+  }
+
+  /* Skeleton loader */
+  .skeleton {
+    @apply animate-pulse bg-dark-surface rounded;
+  }
+
+  /* Scrollbar */
+  .scrollbar-thin::-webkit-scrollbar {
+    @apply w-2;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-dark-surface;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-dark-border rounded-full;
+    @apply hover:bg-dark-text-muted;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-dark-accent-blue to-dark-accent-green;
+  }
+
+  /* Animations */
+  .fade-in {
+    animation: fadeIn 0.5s ease-in;
+  }
+
+  .slide-up {
+    animation: slideUp 0.6s ease-out;
+  }
+
+  .scale-in {
+    animation: scaleIn 0.4s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Glow effects */
+  .glow-blue {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+
+  .glow-green {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  }
+
+  .glow-red {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+  }
+
+  .glow-yellow {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+  }
+
+  .glow-purple {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+  }
+}
+
+/* Leaflet Map Styles */
+.leaflet-container {
+  background: #0a0a0a !important;
+  font-family: inherit;
+}
+
+.leaflet-popup-content-wrapper {
+  background: #171717 !important;
+  color: #fafafa !important;
+  border: 1px solid #262626 !important;
+  border-radius: 8px !important;
+}
+
+.leaflet-popup-tip {
+  background: #171717 !important;
+  border: 1px solid #262626 !important;
+}
+
+.leaflet-popup-close-button {
+  color: #a3a3a3 !important;
+}
+
+.leaflet-popup-close-button:hover {
+  color: #fafafa !important;
+}
+
+.leaflet-control-zoom a {
+  background: #171717 !important;
+  color: #fafafa !important;
+  border-color: #262626 !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: #1f1f1f !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(23, 23, 23, 0.8) !important;
+  color: #525252 !important;
+}
+
+.leaflet-control-attribution a {
+  color: #3b82f6 !important;
+}
+
+/* Custom marker animation */
+.custom-marker {
+  background: transparent !important;
+  border: none !important;
+}
