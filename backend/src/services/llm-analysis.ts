@@ -90,6 +90,14 @@ export interface OllamaResponse {
 }
 
 /**
+ * Simple in-memory cache entry for LLM responses
+ */
+interface CacheEntry {
+  response: LLMAnalysisResult;
+  timestamp: number;
+}
+
+/**
  * LLM Analysis Service - Uses Ollama with local models for intelligent IP threat analysis
  */
 export class LLMAnalysisService {
@@ -98,6 +106,8 @@ export class LLMAnalysisService {
   private enabled: boolean;
   private timeoutMs: number;
   private threatIntelExtractor: ThreatIntelExtractor;
+  private responseCache: Map<string, CacheEntry>;
+  private cacheTTL: number; // Cache TTL in milliseconds
 
   constructor() {
     this.ollamaUrl = getEnvString('OLLAMA_URL', 'http://ollama:11434');
@@ -105,6 +115,83 @@ export class LLMAnalysisService {
     this.enabled = getEnvBool('LLM_ENABLED', true);
     this.timeoutMs = getEnvNumber('LLM_TIMEOUT_MS', 30000);
     this.threatIntelExtractor = new ThreatIntelExtractor();
+    this.responseCache = new Map<string, CacheEntry>();
+    this.cacheTTL = getEnvNumber('LLM_CACHE_TTL_MS', 1800000); // Default 30 minutes
+
+    // Clean up expired cache entries every 10 minutes
+    setInterval(() => this.cleanExpiredCache(), 600000);
+  }
+
+  /**
+   * Generate cache key from IP record (based on IP and threat indicators)
+   */
+  private getCacheKey(record: CorrelatedIpRecord): string {
+    // Create a cache key that includes IP and key threat indicators
+    const abuseScore = record.threat?.abuseScore ?? 0;
+    const riskLevel = record.threat?.riskLevel ?? 'unknown';
+    const providersCount = record.metadata?.providersSucceeded ?? 0;
+
+    // Include major threat flags in cache key
+    const flags = [
+      record.flags?.isTor ? 'tor' : '',
+      record.flags?.isVpn ? 'vpn' : '',
+      record.flags?.isProxy ? 'proxy' : '',
+      abuseScore > 50 ? 'highabuse' : ''
+    ].filter(Boolean).join('-');
+
+    return `${record.ip}:${riskLevel}:${providersCount}:${flags}`;
+  }
+
+  /**
+   * Get cached LLM response if available and not expired
+   */
+  private getCachedResponse(cacheKey: string): LLMAnalysisResult | null {
+    const cached = this.responseCache.get(cacheKey);
+    if (!cached) return null;
+
+    const age = Date.now() - cached.timestamp;
+    if (age > this.cacheTTL) {
+      this.responseCache.delete(cacheKey);
+      return null;
+    }
+
+    logger.debug({ cacheKey, age }, 'LLM cache hit');
+    return cached.response;
+  }
+
+  /**
+   * Cache LLM response
+   */
+  private setCachedResponse(cacheKey: string, response: LLMAnalysisResult): void {
+    this.responseCache.set(cacheKey, {
+      response,
+      timestamp: Date.now()
+    });
+
+    // Limit cache size to prevent memory issues
+    if (this.responseCache.size > 1000) {
+      const oldestKey = this.responseCache.keys().next().value;
+      if (oldestKey) this.responseCache.delete(oldestKey);
+    }
+  }
+
+  /**
+   * Clean up expired cache entries
+   */
+  private cleanExpiredCache(): void {
+    const now = Date.now();
+    let removed = 0;
+
+    for (const [key, entry] of this.responseCache.entries()) {
+      if (now - entry.timestamp > this.cacheTTL) {
+        this.responseCache.delete(key);
+        removed++;
+      }
+    }
+
+    if (removed > 0) {
+      logger.debug({ removed, remaining: this.responseCache.size }, 'Cleaned expired LLM cache entries');
+    }
   }
 
   /**
@@ -137,6 +224,14 @@ export class LLMAnalysisService {
     }
 
     try {
+      // Check cache first
+      const cacheKey = this.getCacheKey(record);
+      const cached = this.getCachedResponse(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      // Cache miss - generate new analysis
       const prompt = this.buildAnalysisPrompt(record);
       const response = await this.callOllama(prompt);
 
@@ -144,7 +239,14 @@ export class LLMAnalysisService {
         return null;
       }
 
-      return this.parseAnalysisResponse(response, record);
+      const result = this.parseAnalysisResponse(response, record);
+
+      // Cache the result
+      if (result) {
+        this.setCachedResponse(cacheKey, result);
+      }
+
+      return result;
     } catch (error) {
       logger.error({ error }, 'LLM analysis failed');
       return null;
@@ -161,48 +263,64 @@ export class LLMAnalysisService {
     const attackContext = this.extractAttackContext(record);
     const preAnalysis = this.performPreAnalysis(record);
 
-    return `You are a senior SOC analyst analyzing IP threat intelligence.
+    const providersSucceeded = record.metadata?.providersSucceeded ?? 0;
+    const providersQueried = record.metadata?.providersQueried ?? 0;
+    const dataQuality = providersSucceeded >= 8 ? 'HIGH' : providersSucceeded >= 5 ? 'MEDIUM' : 'LOW';
 
-## IP DATA
-IP: ${record.ip}
-Organization: ${dataPoints.org}
-Location: ${dataPoints.location}
-ASN: ${record.asn || 'Unknown'}
-Network Type: ${dataPoints.networkType}
-Abuse Score: ${dataPoints.abuseScore}
-Risk Level: ${record.threat?.riskLevel || 'unknown'}
+    // Concise JSON schema with key requirements
+    const jsonExample = {
+      reasoning: "Write 3-5 paragraphs: (1) IP identification with TIER 1 source confirmation, (2) Cross-source correlation with specific numbers/dates, (3) Contradiction analysis weighted by trust tiers, (4) Severity justification with evidence, (5) Confidence factors. ALWAYS cite: source names, exact numbers, first/last seen dates, malware families, campaign names.",
+      verdict: "BLOCK | INVESTIGATE | MONITOR | ALLOW",
+      severityLevel: "critical | high | medium | low | safe",
+      executiveSummary: "Single sentence: [SEVERITY] threat - [KEY FINDING] ([TOP SOURCE]) with [EVIDENCE]; recommend [ACTION]",
+      summary: "2-3 paragraphs with org/location context, specific threats with sources, handling rationale",
+      riskAssessment: "Technical analysis: malicious behaviors (numbers+sources), timeline (first/last seen), impact, confidence justification",
+      recommendations: ["3-5 specific technical actions", "GOOD: 'Block at firewall, query SIEM for connections in last 90d'", "BAD: 'Monitor the IP'"],
+      threatIndicators: ["5-10 specific indicators", "Format: '847 AbuseIPDB reports (SSH brute-force)'", "NOT: 'abuse reports'"],
+      confidence: 85
+    };
 
-## THREAT INTELLIGENCE SOURCES
-${threatIntel || 'No additional threat intelligence available.'}
+    return `You are a senior SOC analyst. Analyze this IP and output ONLY valid JSON (no markdown, no code blocks).
 
-## ATTACK CONTEXT
+## TARGET: ${record.ip}
+Org: ${dataPoints.org} | Location: ${dataPoints.location} | ASN: ${record.asn || 'Unknown'}
+Network: ${dataPoints.networkType} | Abuse: ${dataPoints.abuseScore} | Risk: ${record.threat?.riskLevel || 'unknown'}
+Data Quality: ${dataQuality} (${providersSucceeded}/${providersQueried} sources)
+
+## SOURCE TRUST TIERS (weight by tier when correlating):
+TIER 1 (9-10/10): abuse.ch (10/10), AbuseIPDB (9/10), VirusTotal (9/10), AlienVault OTX (9/10)
+TIER 2 (7-8/10): GreyNoise (8/10), CrowdSec (8/10), Shodan (8/10), IPQualityScore (8/10)
+TIER 3 (6-7/10): ThreatMiner (7/10), Pulsedive (7/10)
+
+## THREAT INTELLIGENCE
+${threatIntel || 'No detailed threat intelligence available.'}
+
+## ATTACK PATTERNS
 ${attackContext || 'No specific attack patterns identified.'}
 
-## OBSERVED FACTS
-Key Concerns: ${preAnalysis.concerns.join(', ') || 'None'}
-Benign Indicators: ${preAnalysis.benignIndicators.join(', ') || 'None'}
-Potential MITRE Techniques: ${preAnalysis.mitreTechniques.join(', ') || 'None'}
+## PRE-ANALYSIS
+Concerns: ${preAnalysis.concerns.length > 0 ? preAnalysis.concerns.join('; ') : 'None'}
+Benign: ${preAnalysis.benignIndicators.length > 0 ? preAnalysis.benignIndicators.join('; ') : 'None'}
+MITRE: ${preAnalysis.mitreTechniques.length > 0 ? preAnalysis.mitreTechniques.join('; ') : 'None'}
 
-## ANALYSIS TASK
-Think through this analysis step-by-step:
+## ANALYSIS METHOD
+1. CORRELATE: Cross-reference sources, weight TIER 1 highest, explain conflicts
+2. CHARACTERIZE: Confirmed vs suspected threats, active vs historical, specific IOCs (malware families, campaigns, CVEs)
+3. TEMPORAL: Analyze first/last seen dates, activity trends (escalating/stable/declining)
+4. FALSE POSITIVE CHECK: Legitimate infra (CDN/cloud)? GreyNoise RIOT? Benign > malicious?
+5. RISK: Threat level, attack surface (open ports/CVEs), business impact
 
-1. What are the most concerning findings from the threat intelligence?
-2. How do different data sources corroborate or contradict each other?
-3. Are there benign explanations for any suspicious flags?
-4. What is the overall threat level and recommended action?
+## OUTPUT FORMAT
+${JSON.stringify(jsonExample, null, 2)}
 
-Provide your analysis as JSON:
-{
-  "verdict": "BLOCK or INVESTIGATE or MONITOR or ALLOW",
-  "severityLevel": "critical or high or medium or low or safe",
-  "summary": "What this IP is and recommended action",
-  "riskAssessment": "Technical risk analysis",
-  "recommendations": ["Recommendation 1", "Recommendation 2", "Recommendation 3"],
-  "threatIndicators": ["Indicator 1", "Indicator 2"],
-  "confidence": 85
-}
+## REQUIREMENTS
+✓ Cite specific sources, numbers, dates, malware families, campaigns
+✓ Reasoning: 3-5 paragraphs with evidence-based analysis
+✓ Handle conflicts: explain which source to trust and why
+✗ No generic statements ("multiple reports" → "847 AbuseIPDB reports")
+✗ No vague language ("may be" → make determination based on evidence)
 
-Output only valid JSON:`;
+Output JSON only:`;
   }
 
   /**
@@ -554,229 +672,437 @@ Output only valid JSON:`;
   }
 
   /**
-   * Extract threat intelligence from provider raw data
+   * Extract detailed threat intelligence from provider raw data with structured formatting
    */
   private extractThreatIntelligence(record: CorrelatedIpRecord): string {
-    const intel: string[] = [];
+    const sections: string[] = [];
     const providers = record.metadata?.providers || [];
 
     for (const provider of providers) {
       if (!provider.success || !provider.raw) continue;
 
       const raw = provider.raw as any;
+      const providerIntel: string[] = [];
 
-      // ThreatMiner data
+      // ThreatMiner data - Enhanced with specific details
       if (provider.provider === 'threatminer.org') {
+        providerIntel.push(`**ThreatMiner Intelligence:**`);
+
         if (raw.malwareSamples?.length > 0) {
-          intel.push(`ThreatMiner: ${raw.malwareSamples.length} malware samples associated`);
+          providerIntel.push(`  - Malware Samples: ${raw.malwareSamples.length} associated samples`);
+          // Extract specific sample hashes (first 3)
+          const samples = raw.malwareSamples.slice(0, 3).map((s: any) => {
+            if (typeof s === 'string') return s;
+            return s.hash || s.md5 || s.sha256 || 'Unknown hash';
+          });
+          if (samples.length > 0) {
+            providerIntel.push(`    Samples: ${samples.join(', ')}`);
+          }
         }
+
         if (raw.reportTags?.length > 0) {
-          intel.push(`ThreatMiner: ${raw.reportTags.length} threat reports reference this IP`);
+          providerIntel.push(`  - Threat Reports: ${raw.reportTags.length} reports reference this IP`);
+          // Extract report tags
+          const tags = Array.isArray(raw.reportTags) ? raw.reportTags.slice(0, 5).join(', ') : raw.reportTags;
+          providerIntel.push(`    Tags: ${tags}`);
         }
+
         if (raw.passiveDns?.length > 0) {
-          intel.push(`ThreatMiner: ${raw.passiveDns.length} passive DNS records`);
+          providerIntel.push(`  - Passive DNS: ${raw.passiveDns.length} historical DNS records`);
+          const domains = raw.passiveDns.slice(0, 3).map((d: any) => d.domain || d).join(', ');
+          if (domains) providerIntel.push(`    Domains: ${domains}`);
         }
+
         if (raw.threatIndicators?.length > 0) {
-          intel.push(`ThreatMiner Indicators: ${raw.threatIndicators.join(', ')}`);
+          providerIntel.push(`  - Threat Indicators: ${raw.threatIndicators.join(', ')}`);
         }
+
+        if (providerIntel.length > 1) sections.push(providerIntel.join('\n'));
       }
 
-      // AlienVault OTX data
+      // AlienVault OTX data - Enhanced with pulse details
       if (provider.provider === 'otx.alienvault.com') {
+        providerIntel.push(`**AlienVault OTX Intelligence:**`);
+
         if (raw.general?.pulse_info?.count > 0) {
-          intel.push(`AlienVault OTX: Referenced in ${raw.general.pulse_info.count} threat pulses`);
+          providerIntel.push(`  - Threat Pulses: Referenced in ${raw.general.pulse_info.count} active threat campaigns`);
+
+          // Extract detailed pulse information
+          if (raw.pulses?.length > 0) {
+            providerIntel.push(`  - Campaign Details:`);
+            for (const pulse of raw.pulses.slice(0, 3)) {
+              const pulseName = pulse.name || 'Unnamed Campaign';
+              const pulseDate = pulse.created ? new Date(pulse.created).toLocaleDateString() : 'Unknown date';
+              providerIntel.push(`    • "${pulseName}" (${pulseDate})`);
+
+              if (pulse.description) {
+                const desc = pulse.description.substring(0, 100) + (pulse.description.length > 100 ? '...' : '');
+                providerIntel.push(`      Description: ${desc}`);
+              }
+
+              if (pulse.tags && pulse.tags.length > 0) {
+                providerIntel.push(`      Tags: ${pulse.tags.slice(0, 5).join(', ')}`);
+              }
+            }
+          }
         }
+
         if (raw.malwareSampleCount > 0) {
-          intel.push(`AlienVault OTX: ${raw.malwareSampleCount} malware samples linked`);
+          providerIntel.push(`  - Malware Samples: ${raw.malwareSampleCount} samples linked to this IP`);
         }
+
         if (raw.threatIndicators?.length > 0) {
-          intel.push(`OTX Indicators: ${raw.threatIndicators.join(', ')}`);
+          providerIntel.push(`  - IOC Indicators: ${raw.threatIndicators.join(', ')}`);
         }
-        if (raw.pulses?.length > 0) {
-          const pulseNames = raw.pulses.slice(0, 3).map((p: any) => p.name || 'Unnamed').join(', ');
-          intel.push(`OTX Pulses: ${pulseNames}`);
+
+        if (providerIntel.length > 1) sections.push(providerIntel.join('\n'));
+      }
+
+      // GreyNoise data - Enhanced with actor profiling
+      if (provider.provider === 'greynoise.io') {
+        providerIntel.push(`**GreyNoise Intelligence:**`);
+
+        if (raw.classification) {
+          const classification = raw.classification.toUpperCase();
+          providerIntel.push(`  - Classification: ${classification}`);
+        }
+
+        if (raw.noise === true) {
+          providerIntel.push(`  - Activity: Internet background noise/scanning activity detected`);
+        }
+
+        if (raw.riot === true) {
+          providerIntel.push(`  - RIOT Dataset: Known benign service provider`);
+          if (raw.trust_level) {
+            providerIntel.push(`    Trust Level: ${raw.trust_level}`);
+          }
+        }
+
+        if (raw.name) {
+          providerIntel.push(`  - Actor Identification: ${raw.name}`);
+        }
+
+        if (raw.tags && raw.tags.length > 0) {
+          providerIntel.push(`  - Tags: ${raw.tags.join(', ')}`);
+        }
+
+        if (raw.metadata) {
+          if (raw.metadata.organization) {
+            providerIntel.push(`  - Organization: ${raw.metadata.organization}`);
+          }
+          if (raw.metadata.category) {
+            providerIntel.push(`  - Category: ${raw.metadata.category}`);
+          }
+        }
+
+        if (raw.first_seen) {
+          providerIntel.push(`  - First Seen: ${raw.first_seen}`);
+        }
+        if (raw.last_seen) {
+          providerIntel.push(`  - Last Seen: ${raw.last_seen}`);
+        }
+
+        if (raw.threatIndicators?.length > 0) {
+          providerIntel.push(`  - Indicators: ${raw.threatIndicators.join(', ')}`);
+        }
+
+        if (providerIntel.length > 1) sections.push(providerIntel.join('\n'));
+      }
+
+      // CrowdSec CTI data - Enhanced with behavioral analysis
+      if (provider.provider === 'crowdsec.net') {
+        providerIntel.push(`**CrowdSec CTI Intelligence:**`);
+
+        if (raw.reputation) {
+          providerIntel.push(`  - Reputation Score: ${raw.reputation}`);
+        }
+
+        if (raw.behaviors?.length > 0) {
+          providerIntel.push(`  - Observed Behaviors (${raw.behaviors.length} total):`);
+          for (const behavior of raw.behaviors.slice(0, 5)) {
+            const label = behavior.label || behavior.name || behavior;
+            const count = behavior.count || '';
+            providerIntel.push(`    • ${label}${count ? ` (${count} occurrences)` : ''}`);
+          }
+        }
+
+        if (raw.attackDetails?.length > 0) {
+          providerIntel.push(`  - Attack Details:`);
+          for (const attack of raw.attackDetails.slice(0, 3)) {
+            const attackName = attack.name || attack.label || attack;
+            const scenario = attack.scenario || '';
+            providerIntel.push(`    • ${attackName}${scenario ? ` - ${scenario}` : ''}`);
+          }
+        }
+
+        if (raw.targetCountries?.length > 0) {
+          providerIntel.push(`  - Geographic Targeting: ${raw.targetCountries.slice(0, 5).join(', ')}`);
+        }
+
+        if (raw.scores) {
+          providerIntel.push(`  - Threat Scores:`);
+          for (const [metric, value] of Object.entries(raw.scores)) {
+            if (typeof value === 'object' && value !== null) {
+              const scoreObj = value as any;
+              if (scoreObj.aggressiveness !== undefined || scoreObj.threat !== undefined) {
+                providerIntel.push(`    ${metric}: Aggressiveness ${scoreObj.aggressiveness || 0}/5, Threat ${scoreObj.threat || 0}/5`);
+              }
+            } else if (typeof value === 'number' && value > 0) {
+              providerIntel.push(`    ${metric}: ${value}`);
+            }
+          }
+        }
+
+        if (raw.threatIndicators?.length > 0) {
+          providerIntel.push(`  - Indicators: ${raw.threatIndicators.join(', ')}`);
+        }
+
+        if (providerIntel.length > 1) sections.push(providerIntel.join('\n'));
+      }
+
+      // IPQualityScore data - Enhanced with fraud analysis
+      if (provider.provider === 'ipqualityscore.com') {
+        providerIntel.push(`**IPQualityScore Intelligence:**`);
+
+        if (raw.fraud_score !== undefined) {
+          const score = raw.fraud_score;
+          const risk = score >= 75 ? 'HIGH' : score >= 50 ? 'MEDIUM' : 'LOW';
+          providerIntel.push(`  - Fraud Score: ${score}/100 (${risk} RISK)`);
+        }
+
+        const detections: string[] = [];
+        if (raw.bot_status === true) detections.push('Bot traffic');
+        if (raw.is_crawler === true) detections.push('Crawler');
+        if (raw.recent_abuse === true) detections.push('Recent abuse');
+        if (raw.vpn === true) detections.push('VPN');
+        if (raw.proxy === true) detections.push('Proxy');
+        if (raw.tor === true) detections.push('Tor');
+
+        if (detections.length > 0) {
+          providerIntel.push(`  - Detections: ${detections.join(', ')}`);
+        }
+
+        if (raw.connection_type) {
+          providerIntel.push(`  - Connection Type: ${raw.connection_type}`);
+        }
+
+        if (raw.abuse_velocity) {
+          providerIntel.push(`  - Abuse Velocity: ${raw.abuse_velocity.toUpperCase()}`);
+        }
+
+        if (raw.operating_system) {
+          providerIntel.push(`  - Operating System: ${raw.operating_system}`);
+        }
+
+        if (raw.threatIndicators?.length > 0) {
+          providerIntel.push(`  - Indicators: ${raw.threatIndicators.join(', ')}`);
+        }
+
+        if (providerIntel.length > 1) sections.push(providerIntel.join('\n'));
+      }
+
+      // Pulsedive data - Enhanced with feed correlation
+      if (provider.provider === 'pulsedive.com') {
+        providerIntel.push(`**Pulsedive Intelligence:**`);
+
+        if (raw.risk) {
+          providerIntel.push(`  - Risk Category: ${raw.risk.toUpperCase()}`);
+        }
+
+        if (raw.riskScore !== undefined) {
+          providerIntel.push(`  - Risk Score: ${raw.riskScore}`);
+        }
+
+        if (raw.threats?.length > 0) {
+          providerIntel.push(`  - Associated Threats:`);
+          for (const threat of raw.threats.slice(0, 5)) {
+            const threatName = threat.name || threat;
+            const category = threat.category || '';
+            providerIntel.push(`    • ${threatName}${category ? ` (${category})` : ''}`);
+          }
+        }
+
+        if (raw.feeds?.length > 0) {
+          providerIntel.push(`  - Threat Feeds (${raw.feeds.length} total):`);
+          const feedNames = raw.feeds.slice(0, 5).map((f: any) => f.name || f).join(', ');
+          providerIntel.push(`    ${feedNames}`);
+        }
+
+        if (raw.linkedIndicators > 0) {
+          providerIntel.push(`  - Linked Indicators: ${raw.linkedIndicators} related IOCs`);
+        }
+
+        if (raw.threatIndicators?.length > 0) {
+          providerIntel.push(`  - Indicators: ${raw.threatIndicators.join(', ')}`);
+        }
+
+        if (providerIntel.length > 1) sections.push(providerIntel.join('\n'));
+      }
+
+      // abuse.ch data - Enhanced with malware distribution analysis
+      if (provider.provider === 'abuse.ch') {
+        providerIntel.push(`**abuse.ch Intelligence:**`);
+
+        // URLhaus malware distribution
+        if (raw.urlhaus?.query_status === 'ok' && raw.urlhaus?.urls?.length > 0) {
+          providerIntel.push(`  - URLhaus: ${raw.urlhaus.urls.length} malware distribution URLs detected`);
+
+          const malwareDetails = new Map<string, { count: number; urls: string[] }>();
+          for (const url of raw.urlhaus.urls) {
+            const threat = url.threat || 'Unknown';
+            if (!malwareDetails.has(threat)) {
+              malwareDetails.set(threat, { count: 0, urls: [] });
+            }
+            const details = malwareDetails.get(threat)!;
+            details.count++;
+            if (details.urls.length < 2 && url.url) {
+              details.urls.push(url.url);
+            }
+          }
+
+          providerIntel.push(`  - Malware Distribution:`);
+          for (const [malware, details] of malwareDetails.entries()) {
+            providerIntel.push(`    • ${malware}: ${details.count} URL(s)`);
+            if (details.urls.length > 0) {
+              providerIntel.push(`      URLs: ${details.urls.join(', ')}`);
+            }
+          }
+        }
+
+        // ThreatFox IOCs
+        if (raw.threatfox?.query_status === 'ok' && raw.threatfox?.data?.length > 0) {
+          providerIntel.push(`  - ThreatFox: ${raw.threatfox.data.length} IOC entries`);
+
+          const iocDetails: string[] = [];
+          for (const ioc of raw.threatfox.data.slice(0, 3)) {
+            const family = ioc.malware_printable || ioc.malware || 'Unknown';
+            const iocType = ioc.ioc_type || '';
+            const confidence = ioc.confidence_level || '';
+            iocDetails.push(`${family}${iocType ? ` (${iocType})` : ''}${confidence ? ` - ${confidence} confidence` : ''}`);
+          }
+
+          if (iocDetails.length > 0) {
+            providerIntel.push(`  - IOC Details:`);
+            iocDetails.forEach(detail => providerIntel.push(`    • ${detail}`));
+          }
+        }
+
+        // Feodo Tracker botnet C2
+        if (raw.feodoTracker?.query_status === 'ok') {
+          providerIntel.push(`  - ⚠️  FEODO TRACKER: CONFIRMED ACTIVE BOTNET C2 SERVER`);
+
+          if (raw.feodoTracker.malware) {
+            providerIntel.push(`    Botnet Family: ${raw.feodoTracker.malware}`);
+          }
+          if (raw.feodoTracker.first_seen) {
+            providerIntel.push(`    First Seen: ${raw.feodoTracker.first_seen}`);
+          }
+          if (raw.feodoTracker.last_seen) {
+            providerIntel.push(`    Last Seen: ${raw.feodoTracker.last_seen}`);
+          }
+        }
+
+        if (raw.isBotnetC2 === true) {
+          providerIntel.push(`  - 🚨 CRITICAL: Active botnet command & control infrastructure`);
+        }
+
+        if (raw.threatIndicators?.length > 0) {
+          providerIntel.push(`  - Indicators: ${raw.threatIndicators.join(', ')}`);
+        }
+
+        if (providerIntel.length > 1) sections.push(providerIntel.join('\n'));
+      }
+
+      // AbuseIPDB data - Enhanced with category breakdown
+      if (provider.provider === 'abuseipdb.com' && raw.totalReports > 0) {
+        providerIntel.push(`**AbuseIPDB Intelligence:**`);
+        providerIntel.push(`  - Abuse Reports: ${raw.totalReports} reports submitted`);
+        providerIntel.push(`  - Confidence Score: ${raw.abuseConfidenceScore}%`);
+
+        if (raw.lastReportedAt) {
+          providerIntel.push(`  - Last Reported: ${new Date(raw.lastReportedAt).toLocaleDateString()}`);
+        }
+
+        if (raw.usageType) {
+          providerIntel.push(`  - Usage Type: ${raw.usageType}`);
+        }
+
+        sections.push(providerIntel.join('\n'));
+      }
+
+      // VirusTotal data - Enhanced with detection breakdown
+      if (provider.provider === 'virustotal.com') {
+        if (raw.malicious > 0 || raw.suspicious > 0 || raw.harmless > 0) {
+          providerIntel.push(`**VirusTotal Intelligence:**`);
+          providerIntel.push(`  - Security Vendor Detections:`);
+          providerIntel.push(`    Malicious: ${raw.malicious || 0}, Suspicious: ${raw.suspicious || 0}, Harmless: ${raw.harmless || 0}`);
+
+          if (raw.last_analysis_stats) {
+            const total = Object.values(raw.last_analysis_stats as any).reduce((a: any, b: any) => a + b, 0);
+            providerIntel.push(`    Total Engines: ${total}`);
+          }
+
+          sections.push(providerIntel.join('\n'));
         }
       }
 
-      // GreyNoise data
-      if (provider.provider === 'greynoise.io') {
-        if (raw.noise === true) {
-          intel.push('GreyNoise: Detected as internet background noise/scanner');
-        }
-        if (raw.riot === true) {
-          intel.push('GreyNoise: Part of known benign service (RIOT dataset)');
-        }
-        if (raw.classification) {
-          intel.push(`GreyNoise Classification: ${raw.classification}`);
-        }
-        if (raw.name) {
-          intel.push(`GreyNoise Identified: ${raw.name}`);
-        }
-        if (raw.threatIndicators?.length > 0) {
-          intel.push(`GreyNoise Indicators: ${raw.threatIndicators.join(', ')}`);
+      // Shodan data - Enhanced with service fingerprinting
+      if (provider.provider === 'shodan.io') {
+        if (raw.ports?.length > 0 || raw.vulns?.length > 0) {
+          providerIntel.push(`**Shodan Intelligence:**`);
+
+          if (raw.ports?.length > 0) {
+            providerIntel.push(`  - Exposed Services: ${raw.ports.length} open ports`);
+            providerIntel.push(`    Ports: ${raw.ports.slice(0, 15).join(', ')}`);
+          }
+
+          if (raw.vulns?.length > 0) {
+            providerIntel.push(`  - Vulnerabilities: ${raw.vulns.length} CVEs detected`);
+            providerIntel.push(`    CVEs: ${raw.vulns.slice(0, 5).join(', ')}`);
+          }
+
+          if (raw.hostnames?.length > 0) {
+            providerIntel.push(`  - Hostnames: ${raw.hostnames.slice(0, 3).join(', ')}`);
+          }
+
+          sections.push(providerIntel.join('\n'));
         }
       }
 
       // BGPView data
       if (provider.provider === 'bgpview.io') {
-        if (raw.relatedPrefixCount > 2) {
-          intel.push(`BGPView: Announced in ${raw.relatedPrefixCount} BGP prefixes`);
-        }
-        if (raw.ptrRecord) {
-          intel.push(`PTR Record: ${raw.ptrRecord}`);
-        }
-        if (raw.threatIndicators?.length > 0) {
-          intel.push(`BGP Indicators: ${raw.threatIndicators.join(', ')}`);
-        }
-      }
+        if (raw.relatedPrefixCount > 2 || raw.ptrRecord) {
+          providerIntel.push(`**BGPView Intelligence:**`);
 
-      // AbuseIPDB data
-      if (provider.provider === 'abuseipdb.com' && raw.totalReports > 0) {
-        intel.push(`AbuseIPDB: ${raw.totalReports} abuse reports, confidence ${raw.abuseConfidenceScore}%`);
-      }
-
-      // VirusTotal data
-      if (provider.provider === 'virustotal.com') {
-        if (raw.malicious > 0 || raw.suspicious > 0) {
-          intel.push(`VirusTotal: ${raw.malicious} malicious, ${raw.suspicious} suspicious detections`);
-        }
-      }
-
-      // Shodan data
-      if (provider.provider === 'shodan.io') {
-        if (raw.ports?.length > 0) {
-          intel.push(`Shodan: Open ports - ${raw.ports.slice(0, 10).join(', ')}`);
-        }
-        if (raw.vulns?.length > 0) {
-          intel.push(`Shodan Vulnerabilities: ${raw.vulns.length} CVEs detected`);
-        }
-      }
-
-      // CrowdSec CTI data
-      if (provider.provider === 'crowdsec.net') {
-        if (raw.reputation) {
-          intel.push(`CrowdSec Reputation: ${raw.reputation}`);
-        }
-        if (raw.behaviors?.length > 0) {
-          const behaviors = raw.behaviors.slice(0, 5).map((b: any) => b.label || b.name || b).join(', ');
-          intel.push(`CrowdSec Behaviors: ${behaviors}`);
-        }
-        if (raw.attackDetails?.length > 0) {
-          const attacks = raw.attackDetails.slice(0, 3).map((a: any) => a.name || a.label || a).join(', ');
-          intel.push(`CrowdSec Attack Details: ${attacks}`);
-        }
-        if (raw.targetCountries?.length > 0) {
-          intel.push(`CrowdSec Target Countries: ${raw.targetCountries.slice(0, 5).join(', ')}`);
-        }
-        if (raw.scores) {
-          const scores = Object.entries(raw.scores)
-            .filter(([_, v]) => typeof v === 'number' && (v as number) > 0)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(', ');
-          if (scores) intel.push(`CrowdSec Scores: ${scores}`);
-        }
-        if (raw.threatIndicators?.length > 0) {
-          intel.push(`CrowdSec Indicators: ${raw.threatIndicators.join(', ')}`);
-        }
-      }
-
-      // IPQualityScore data
-      if (provider.provider === 'ipqualityscore.com') {
-        if (raw.fraud_score !== undefined && raw.fraud_score > 0) {
-          intel.push(`IPQualityScore Fraud Score: ${raw.fraud_score}/100`);
-        }
-        if (raw.bot_status === true) {
-          intel.push('IPQualityScore: Detected as bot traffic');
-        }
-        if (raw.recent_abuse === true) {
-          intel.push('IPQualityScore: Recent abuse detected');
-        }
-        if (raw.is_crawler === true) {
-          intel.push('IPQualityScore: Detected as crawler');
-        }
-        if (raw.connection_type) {
-          intel.push(`IPQualityScore Connection: ${raw.connection_type}`);
-        }
-        if (raw.abuse_velocity) {
-          intel.push(`IPQualityScore Abuse Velocity: ${raw.abuse_velocity}`);
-        }
-        if (raw.threatIndicators?.length > 0) {
-          intel.push(`IPQS Indicators: ${raw.threatIndicators.join(', ')}`);
-        }
-      }
-
-      // Pulsedive data
-      if (provider.provider === 'pulsedive.com') {
-        if (raw.risk) {
-          intel.push(`Pulsedive Risk: ${raw.risk}`);
-        }
-        if (raw.riskScore !== undefined) {
-          intel.push(`Pulsedive Risk Score: ${raw.riskScore}`);
-        }
-        if (raw.threats?.length > 0) {
-          const threats = raw.threats.slice(0, 5).map((t: any) => t.name || t).join(', ');
-          intel.push(`Pulsedive Threats: ${threats}`);
-        }
-        if (raw.feeds?.length > 0) {
-          const feeds = raw.feeds.slice(0, 5).map((f: any) => f.name || f).join(', ');
-          intel.push(`Pulsedive Feeds: ${feeds}`);
-        }
-        if (raw.linkedIndicators > 0) {
-          intel.push(`Pulsedive: ${raw.linkedIndicators} linked indicators`);
-        }
-        if (raw.threatIndicators?.length > 0) {
-          intel.push(`Pulsedive Indicators: ${raw.threatIndicators.join(', ')}`);
-        }
-      }
-
-      // abuse.ch data (URLhaus, ThreatFox, Feodo Tracker)
-      if (provider.provider === 'abuse.ch') {
-        if (raw.urlhaus?.query_status === 'ok' && raw.urlhaus?.urls?.length > 0) {
-          intel.push(`URLhaus: ${raw.urlhaus.urls.length} malware distribution URLs`);
-          const malwareTypes = new Set<string>();
-          for (const url of raw.urlhaus.urls) {
-            if (url.threat) malwareTypes.add(url.threat);
+          if (raw.relatedPrefixCount > 2) {
+            providerIntel.push(`  - BGP Announcements: Advertised in ${raw.relatedPrefixCount} prefixes`);
           }
-          if (malwareTypes.size > 0) {
-            intel.push(`URLhaus Malware Types: ${Array.from(malwareTypes).slice(0, 5).join(', ')}`);
+
+          if (raw.ptrRecord) {
+            providerIntel.push(`  - PTR Record: ${raw.ptrRecord}`);
           }
-        }
-        if (raw.threatfox?.query_status === 'ok' && raw.threatfox?.data?.length > 0) {
-          intel.push(`ThreatFox: ${raw.threatfox.data.length} IOC entries`);
-          const families = new Set<string>();
-          for (const ioc of raw.threatfox.data) {
-            if (ioc.malware_printable) families.add(ioc.malware_printable);
-            else if (ioc.malware) families.add(ioc.malware);
+
+          if (raw.threatIndicators?.length > 0) {
+            providerIntel.push(`  - Indicators: ${raw.threatIndicators.join(', ')}`);
           }
-          if (families.size > 0) {
-            intel.push(`ThreatFox Malware Families: ${Array.from(families).slice(0, 5).join(', ')}`);
-          }
-        }
-        if (raw.feodoTracker?.query_status === 'ok') {
-          intel.push('Feodo Tracker: CONFIRMED BOTNET C2 SERVER');
-          if (raw.feodoTracker.malware) {
-            intel.push(`Botnet Family: ${raw.feodoTracker.malware}`);
-          }
-          if (raw.feodoTracker.first_seen) {
-            intel.push(`Botnet First Seen: ${raw.feodoTracker.first_seen}`);
-          }
-        }
-        if (raw.isBotnetC2 === true) {
-          intel.push('CRITICAL: Active botnet command & control server');
-        }
-        if (raw.threatIndicators?.length > 0) {
-          intel.push(`abuse.ch Indicators: ${raw.threatIndicators.join(', ')}`);
+
+          sections.push(providerIntel.join('\n'));
         }
       }
     }
 
-    return intel.length > 0 ? intel.join('\n') : 'No additional threat intelligence available';
+    return sections.length > 0
+      ? sections.join('\n\n')
+      : 'No detailed threat intelligence available from providers.';
   }
 
   /**
    * Call Ollama API with the prompt
+   * Uses optimized parameters for fast, high-quality analysis
    */
   private async callOllama(prompt: string): Promise<string | null> {
+    const startTime = Date.now();
+
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -792,12 +1118,16 @@ Output only valid JSON:`;
           stream: false,
           format: 'json',
           options: {
-            temperature: 0.3,        // Conservative for consistent results
-            top_p: 0.9,              // Allow broader sampling
-            top_k: 50,               // Broader vocabulary
-            num_predict: 512,        // Reduced for faster completion (original value, proven to work)
-            repeat_penalty: 1.5,     // Strong penalty to prevent repetition loops
-            stop: ['```', '\n\n\n', '}\n\n'], // Stop after JSON closes
+            temperature: 0.3,        // Lower for faster, more focused responses
+            top_p: 0.85,             // Slightly narrower for consistency
+            top_k: 40,               // Reduced for faster token selection
+            num_predict: 800,        // Reduced from 1024 - most responses fit in 500-700 tokens
+            repeat_penalty: 1.15,    // Lower penalty for faster generation
+            stop: [],                // No stop sequences - let it complete the full JSON
+            num_ctx: 4096,           // Context window size (explicit setting)
+            num_batch: 512,          // Batch size for prompt processing (faster)
+            num_gpu: 1,              // Use GPU if available
+            num_thread: 4,           // CPU threads if no GPU
           },
         }),
         signal: controller.signal,
@@ -811,12 +1141,22 @@ Output only valid JSON:`;
       }
 
       const data = (await response.json()) as OllamaResponse;
+      const duration = Date.now() - startTime;
+
+      logger.debug({
+        duration,
+        tokens: data.eval_count,
+        tokensPerSecond: data.eval_count && data.eval_duration ? (data.eval_count / (data.eval_duration / 1e9)).toFixed(1) : undefined
+      }, 'LLM analysis completed');
+
       return data.response;
     } catch (error) {
+      const duration = Date.now() - startTime;
+
       if (error instanceof Error && error.name === 'AbortError') {
-        logger.warn('Ollama request timed out');
+        logger.warn({ duration, timeout: this.timeoutMs }, 'Ollama request timed out');
       } else {
-        logger.error({ error }, 'Ollama request failed');
+        logger.error({ error, duration }, 'Ollama request failed');
       }
       return null;
     }
@@ -1059,16 +1399,42 @@ Output only the sentence, nothing else:`;
 
   /**
    * Batch analyze multiple IPs (useful for bulk lookups)
+   * Optimized with cache checking and parallel processing
    */
   async batchAnalyze(
     records: CorrelatedIpRecord[],
-    concurrency = 2
+    concurrency = 3 // Increased from 2 for better throughput
   ): Promise<Map<string, LLMAnalysisResult | null>> {
     const results = new Map<string, LLMAnalysisResult | null>();
 
-    // Process in batches to avoid overwhelming the LLM
-    for (let i = 0; i < records.length; i += concurrency) {
-      const batch = records.slice(i, i + concurrency);
+    // First pass: check cache for all records
+    const uncachedRecords: CorrelatedIpRecord[] = [];
+
+    for (const record of records) {
+      const cacheKey = this.getCacheKey(record);
+      const cached = this.getCachedResponse(cacheKey);
+
+      if (cached) {
+        results.set(record.ip, cached);
+      } else {
+        uncachedRecords.push(record);
+      }
+    }
+
+    if (uncachedRecords.length === 0) {
+      logger.debug({ total: records.length, cached: records.length }, 'All batch records served from cache');
+      return results;
+    }
+
+    logger.debug({
+      total: records.length,
+      cached: records.length - uncachedRecords.length,
+      toAnalyze: uncachedRecords.length
+    }, 'Batch analysis cache stats');
+
+    // Second pass: analyze uncached records in parallel batches
+    for (let i = 0; i < uncachedRecords.length; i += concurrency) {
+      const batch = uncachedRecords.slice(i, i + concurrency);
       const batchResults = await Promise.all(
         batch.map(record => this.analyzeIP(record))
       );
@@ -1082,12 +1448,42 @@ Output only the sentence, nothing else:`;
   }
 
   /**
+   * Get cache statistics
+   */
+  getCacheStats(): {
+    size: number;
+    maxSize: number;
+    ttlMs: number;
+    hitRate?: number;
+  } {
+    return {
+      size: this.responseCache.size,
+      maxSize: 1000,
+      ttlMs: this.cacheTTL,
+    };
+  }
+
+  /**
+   * Clear the response cache (useful for testing or manual cache invalidation)
+   */
+  clearCache(): void {
+    const size = this.responseCache.size;
+    this.responseCache.clear();
+    logger.info({ clearedEntries: size }, 'LLM response cache cleared');
+  }
+
+  /**
    * Get service health status
    */
   async getHealthStatus(): Promise<{
     available: boolean;
     model: string;
     latencyMs?: number;
+    cache?: {
+      size: number;
+      maxSize: number;
+      ttlMs: number;
+    };
   }> {
     const start = Date.now();
     const available = await this.isAvailable();
@@ -1097,6 +1493,7 @@ Output only the sentence, nothing else:`;
       available,
       model: this.model,
       latencyMs: available ? latencyMs : undefined,
+      cache: this.getCacheStats(),
     };
   }
 }
