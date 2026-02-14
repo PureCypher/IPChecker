@@ -1,0 +1,242 @@
+services:
+  # ═════════════════════════════════════════════════════
+  # Web Application (Backend + Frontend)
+  # ═════════════════════════════════════════════════════
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/ipintel
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-change-me-in-production}
+
+      # LLM Configuration
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_API_URL=${LLM_API_URL:-https://api.groq.com/openai/v1}
+      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
+      - OLLAMA_URL=${OLLAMA_URL:-https://ollama.com}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
+      - LLM_ENABLED=${LLM_ENABLED:-true}
+      - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-30000}
+
+      # Provider API Keys (loaded from .env)
+      - IPINFO_TOKEN=${IPINFO_TOKEN:-}
+      - IPDATA_KEY=${IPDATA_KEY:-}
+      - ABUSEIPDB_KEY=${ABUSEIPDB_KEY:-}
+      - SHODAN_KEY=${SHODAN_KEY:-}
+      - IPGEOLOCATION_KEY=${IPGEOLOCATION_KEY:-}
+      - VIRUSTOTAL_KEY=${VIRUSTOTAL_KEY:-}
+      - ALIENVAULT_OTX_KEY=${ALIENVAULT_OTX_KEY:-}
+      - GREYNOISE_KEY=${GREYNOISE_KEY:-}
+      - CROWDSEC_KEY=${CROWDSEC_KEY:-}
+      - IPQUALITYSCORE_KEY=${IPQUALITYSCORE_KEY:-}
+      - PULSEDIVE_KEY=${PULSEDIVE_KEY:-}
+
+      # Provider trust ranks
+      - IPINFO_TRUST_RANK=${IPINFO_TRUST_RANK:-8}
+      - IPDATA_TRUST_RANK=${IPDATA_TRUST_RANK:-7}
+      - IPAPI_TRUST_RANK=${IPAPI_TRUST_RANK:-6}
+      - ABUSEIPDB_TRUST_RANK=${ABUSEIPDB_TRUST_RANK:-9}
+      - SHODAN_TRUST_RANK=${SHODAN_TRUST_RANK:-8}
+      - IPGEOLOCATION_TRUST_RANK=${IPGEOLOCATION_TRUST_RANK:-7}
+      - VIRUSTOTAL_TRUST_RANK=${VIRUSTOTAL_TRUST_RANK:-9}
+      - THREATMINER_TRUST_RANK=${THREATMINER_TRUST_RANK:-7}
+      - ALIENVAULT_TRUST_RANK=${ALIENVAULT_TRUST_RANK:-8}
+      - GREYNOISE_TRUST_RANK=${GREYNOISE_TRUST_RANK:-8}
+      - BGPVIEW_TRUST_RANK=${BGPVIEW_TRUST_RANK:-6}
+      - CROWDSEC_TRUST_RANK=${CROWDSEC_TRUST_RANK:-9}
+      - IPQUALITYSCORE_TRUST_RANK=${IPQUALITYSCORE_TRUST_RANK:-9}
+      - PULSEDIVE_TRUST_RANK=${PULSEDIVE_TRUST_RANK:-8}
+      - ABUSECH_TRUST_RANK=${ABUSECH_TRUST_RANK:-9}
+
+      # Tuning
+      - LOOKUP_GLOBAL_TIMEOUT_MS=${LOOKUP_GLOBAL_TIMEOUT_MS:-10000}
+      - PROVIDER_CONCURRENCY=${PROVIDER_CONCURRENCY:-4}
+      - PROVIDER_TIMEOUT_MS=${PROVIDER_TIMEOUT_MS:-3000}
+      - PROVIDER_RETRIES=${PROVIDER_RETRIES:-2}
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-60}
+      - HIGH_LOAD_EVENT_LOOP_LAG_MS=${HIGH_LOAD_EVENT_LOOP_LAG_MS:-50}
+
+      # Caching
+      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-2592000}
+      - CACHE_REFRESH_THRESHOLD_SECONDS=${CACHE_REFRESH_THRESHOLD_SECONDS:-2160000}
+
+      # Authentication
+      - REQUIRE_API_KEY=${REQUIRE_API_KEY:-true}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ipintel
+
+  # ═════════════════════════════════════════════════════
+  # Background Worker (BullMQ Consumer) - DISABLED
+  # Uncomment when worker.ts is implemented
+  # ═════════════════════════════════════════════════════
+  # worker:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     target: runner
+  #   command: ["node", "backend/dist/backend/src/worker.js"]
+  #   environment:
+  #     - NODE_ENV=production
+  #     - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+  #     - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/ipintel
+  #     - OLLAMA_URL=http://ollama:11434
+  #     - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral:latest}
+  #     - LLM_ENABLED=${LLM_ENABLED:-true}
+  #     - LLM_TIMEOUT_MS=${LLM_TIMEOUT_MS:-30000}
+  #     - IPINFO_TOKEN=${IPINFO_TOKEN:-}
+  #     - IPDATA_KEY=${IPDATA_KEY:-}
+  #     - ABUSEIPDB_KEY=${ABUSEIPDB_KEY:-}
+  #     - SHODAN_KEY=${SHODAN_KEY:-}
+  #     - IPGEOLOCATION_KEY=${IPGEOLOCATION_KEY:-}
+  #     - VIRUSTOTAL_KEY=${VIRUSTOTAL_KEY:-}
+  #     - IPINFO_TRUST_RANK=${IPINFO_TRUST_RANK:-8}
+  #     - IPDATA_TRUST_RANK=${IPDATA_TRUST_RANK:-7}
+  #     - IPAPI_TRUST_RANK=${IPAPI_TRUST_RANK:-6}
+  #     - ABUSEIPDB_TRUST_RANK=${ABUSEIPDB_TRUST_RANK:-9}
+  #     - SHODAN_TRUST_RANK=${SHODAN_TRUST_RANK:-8}
+  #     - IPGEOLOCATION_TRUST_RANK=${IPGEOLOCATION_TRUST_RANK:-7}
+  #     - VIRUSTOTAL_TRUST_RANK=${VIRUSTOTAL_TRUST_RANK:-9}
+  #     - PROVIDER_TIMEOUT_MS=${PROVIDER_TIMEOUT_MS:-3000}
+  #     - PROVIDER_RETRIES=${PROVIDER_RETRIES:-2}
+  #     - LOG_LEVEL=${LOG_LEVEL:-info}
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #     db:
+  #       condition: service_healthy
+  #     ollama:
+  #       condition: service_started
+  #   restart: unless-stopped
+  #   networks:
+  #     - ipintel
+
+  # ═════════════════════════════════════════════════════
+  # Ollama LLM Service (Local AI Model)
+  # Only starts with: docker compose --profile ollama up
+  # Not needed when using a cloud LLM provider (LLM_PROVIDER=openai)
+  # ═════════════════════════════════════════════════════
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_NUM_PARALLEL=2
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 30s
+      timeout: 30s
+      retries: 10
+      start_period: 120s
+    restart: unless-stopped
+    networks:
+      - ipintel
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+
+  # ═════════════════════════════════════════════════════
+  # Ollama Model Initializer
+  # ═════════════════════════════════════════════════════
+  ollama-init:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Pulling qwen2.5:3b model (recommended for enhanced analysis)..."
+        ollama pull qwen2.5:3b
+        echo "Model pull complete!"
+        echo ""
+        echo "You can also pull alternative models:"
+        echo "  - qwen2.5:7b (better quality, slower)"
+        echo "  - mistral:latest (fallback option)"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    networks:
+      - ipintel
+    restart: "no"
+
+  # ═════════════════════════════════════════════════════
+  # Redis (Cache + Queue Backend)
+  # ═════════════════════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:6379:6379"  # Expose for local dev tools
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - ipintel
+
+  # ═════════════════════════════════════════════════════
+  # PostgreSQL (Durable Storage)
+  # ═════════════════════════════════════════════════════
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ipintel
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"  # Expose for migrations/debugging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ipintel
+
+volumes:
+  redis-data:
+  postgres-data:
+  ollama-data:
+
+networks:
+  ipintel:
+    driver: bridge

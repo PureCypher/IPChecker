@@ -1,0 +1,252 @@
+# ═══════════════════════════════════════════════════════
+# Dependencies
+# ═══════════════════════════════════════════════════════
+node_modules/
+.pnp
+.pnp.js
+
+# ═══════════════════════════════════════════════════════
+# Build Outputs
+# ═══════════════════════════════════════════════════════
+dist/
+build/
+*.tsbuildinfo
+.cache/
+
+# Frontend specific
+frontend/dist/
+frontend/build/
+
+# Backend specific
+backend/dist/
+backend/build/
+
+# Shared library
+shared/dist/
+shared/build/
+shared/src/**/*.js
+shared/src/**/*.d.ts
+shared/src/**/*.js.map
+shared/src/**/*.d.ts.map
+
+# ═══════════════════════════════════════════════════════
+# Environment Variables
+# ═══════════════════════════════════════════════════════
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.*.local
+
+# Keep .env.example for documentation
+!.env.example
+
+# ═══════════════════════════════════════════════════════
+# Logs
+# ═══════════════════════════════════════════════════════
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ═══════════════════════════════════════════════════════
+# Testing
+# ═══════════════════════════════════════════════════════
+coverage/
+*.lcov
+.nyc_output/
+.vitest/
+playwright-report/
+test-results/
+
+# ═══════════════════════════════════════════════════════
+# Database
+# ═══════════════════════════════════════════════════════
+*.db
+*.sqlite
+*.sqlite3
+
+# Prisma
+backend/prisma/migrations/*_draft*
+backend/.prisma/
+
+# ═══════════════════════════════════════════════════════
+# IDE & Editors
+# ═══════════════════════════════════════════════════════
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ═══════════════════════════════════════════════════════
+# OS Files
+# ═══════════════════════════════════════════════════════
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+.nfs*
+
+# ═══════════════════════════════════════════════════════
+# Docker
+# ═══════════════════════════════════════════════════════
+# Don't ignore docker-compose.yml and Dockerfile
+# But ignore volume data if stored locally
+postgres-data/
+redis-data/
+
+# ═══════════════════════════════════════════════════════
+# Package Managers
+# ═══════════════════════════════════════════════════════
+yarn.lock
+pnpm-lock.yaml
+
+# Keep package.json files
+!package.json
+
+# ═══════════════════════════════════════════════════════
+# Temporary Files
+# ═══════════════════════════════════════════════════════
+*.tmp
+*.temp
+tmp/
+temp/
+
+# ═══════════════════════════════════════════════════════
+# Misc
+# ═══════════════════════════════════════════════════════
+.eslintcache
+.stylelintcache
+*.tgz
+
+# Sentry
+.sentryclirc
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache
+.parcel-cache
+
+# Next.js build output
+.next
+out
+
+# Nuxt.js build / generate output
+.nuxt
+
+# Gatsby files
+.cache/
+public
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*

@@ -1,0 +1,99 @@
+// Prisma Schema for IP Intelligence Correlator
+// Database: PostgreSQL 15+
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl"]
+  engineType    = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Main IP record with correlated data from multiple providers
+model IpRecord {
+  ip        String   @id  // IPv4 or IPv6 as text
+
+  // Geolocation data
+  asn       String?
+  org       String?
+  country   String?  // ISO 3166-1 alpha-2
+  region    String?
+  city      String?
+  latitude  Decimal? @db.Decimal(10, 8)
+  longitude Decimal? @db.Decimal(11, 8)
+  timezone  String?  // IANA timezone
+
+  // JSON fields for complex data
+  flags     Json     // { isProxy, isVpn, isTor, isHosting, isMobile, confidence }
+  threat    Json     // { abuseScore, riskLevel, lastReported }
+  providers Json     // Array of ProviderResult
+  conflicts Json?    // Array of ConflictReport (if any)
+
+  // Metadata
+  source    String   // 'live' | 'refresh'
+  hash      String   // SHA-256 of normalized result for change detection
+
+  // Timestamps
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+  expiresAt DateTime @db.Timestamptz(6)  // createdAt + 30 days
+
+  @@index([expiresAt])
+  @@index([updatedAt])
+  @@map("ip_records")
+}
+
+// Provider performance statistics (aggregated daily)
+model ProviderStat {
+  id       Int      @id @default(autoincrement())
+  provider String
+  date     DateTime @db.Date
+
+  // Counters
+  successCount Int @default(0)
+  failureCount Int @default(0)
+  timeoutCount Int @default(0)
+
+  // Latency metrics
+  avgLatencyMs Int?
+  p95LatencyMs Int?
+
+  // Error tracking
+  lastError String?
+
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([provider, date])
+  @@index([date])
+  @@map("provider_stats")
+}
+
+// Rate limiting entries (tracks per-IP request counts)
+model RateLimitEntry {
+  key     String   @id  // IP address or API key
+  points  Int      @default(0)
+  resetAt DateTime @db.Timestamptz(6)
+
+  @@index([resetAt])
+  @@map("rate_limit_entries")
+}
+
+// API keys for authenticating lookup endpoint requests
+model ApiKey {
+  id           String    @id @default(cuid())
+  name         String    // Human-readable label
+  keyHash      String    @unique // SHA-256 hash of the key (never store plaintext)
+  prefix       String    // First 8 chars of key for identification (e.g., "ipck_abc1...")
+  rateLimit    Int       @default(100) // Requests per minute
+  enabled      Boolean   @default(true)
+  lastUsedAt   DateTime? @db.Timestamptz(6)
+  requestCount Int       @default(0)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([prefix])
+  @@map("api_keys")
+}

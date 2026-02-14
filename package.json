@@ -1,0 +1,42 @@
+{
+  "name": "ip-intelligence-correlator",
+  "version": "1.0.0",
+  "description": "Production-grade IP intelligence platform with multi-provider aggregation",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend",
+    "shared"
+  ],
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm --workspace=backend run dev\" \"npm --workspace=frontend run dev\"",
+    "build": "npm --workspace=shared run build && npm --workspace=backend run build && npm --workspace=frontend run build",
+    "test": "npm --workspace=backend run test && npm --workspace=frontend run test",
+    "test:unit": "npm --workspace=backend run test:unit && npm --workspace=frontend run test:unit",
+    "test:integration": "npm --workspace=backend run test:integration",
+    "test:e2e": "npm --workspace=frontend run test:e2e",
+    "lint": "npm --workspace=backend run lint && npm --workspace=frontend run lint",
+    "type-check": "npm --workspace=backend run type-check && npm --workspace=frontend run type-check",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:build": "docker compose build",
+    "prisma:migrate": "npm --workspace=backend run prisma:migrate",
+    "prisma:generate": "npm --workspace=backend run prisma:generate",
+    "prisma:studio": "npm --workspace=backend run prisma:studio",
+    "clean": "npm --workspace=backend run clean && npm --workspace=frontend run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.57.1",
+    "tsc-alias": "^1.8.16",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
+  },
+  "packageManager": "npm@10.0.0"
+}
