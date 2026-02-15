@@ -2,6 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Design tokens (space-separated RGB for Tailwind alpha support) ── */
+:root {
+  /* Backgrounds */
+  --bg-primary: 10 10 15;
+  --bg-card: 18 18 26;
+  --bg-card-hover: 26 26 40;
+  --border: 30 30 46;
+
+  /* Text */
+  --text-primary: 224 224 224;
+  --text-secondary: 160 168 180;
+  --text-muted: 139 145 154;
+
+  /* Accents */
+  --accent: 0 255 136;
+  --accent-alt: 0 212 255;
+  --danger: 255 68 68;
+  --warning: 255 180 0;
+  --purple: 139 92 246;
+
+  /* Hex variants for Leaflet / inline-style contexts */
+  --c-bg-primary: #0a0a0f;
+  --c-bg-card: #12121a;
+  --c-bg-card-hover: #1a1a28;
+  --c-border: #1e1e2e;
+  --c-text-primary: #e0e0e0;
+  --c-text-secondary: #a0a8b4;
+  --c-text-muted: #8b919a;
+  --c-accent: #00ff88;
+  --c-accent-alt: #00d4ff;
+  --c-danger: #ff4444;
+  --c-warning: #ffb400;
+  --c-purple: #8b5cf6;
+}
+
+/* ── Base layer ── */
 @layer base {
   * {
     @apply border-dark-border;
@@ -9,30 +45,42 @@
 
   body {
     @apply bg-dark-bg text-dark-text-primary;
-    @apply font-mono antialiased;
+    @apply font-sans antialiased;
+    font-size: 0.95rem;
+    line-height: 1.6;
   }
 
   html {
     @apply scroll-smooth;
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'JetBrains Mono', monospace;
+  }
 }
 
+/* ── Component layer ── */
 @layer components {
   /* Button styles */
   .btn {
     @apply px-4 py-2 rounded-md font-medium transition-colors duration-200;
-    @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-dark-bg;
+    @apply focus:outline-none;
+  }
+
+  .btn:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
   }
 
   .btn-primary {
     @apply bg-dark-accent-blue text-white;
-    @apply hover:bg-blue-600 focus:ring-dark-accent-blue;
+    @apply hover:bg-dark-accent-blue/80;
     @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
     @apply bg-dark-surface text-dark-text-primary border border-dark-border;
-    @apply hover:bg-dark-hover focus:ring-dark-border;
+    @apply hover:bg-dark-hover;
   }
 
   /* Card styles */
@@ -43,8 +91,14 @@
 
   .card-hover {
     @apply transition-all duration-300;
-    @apply hover:border-dark-accent-blue/50 hover:shadow-xl hover:shadow-dark-accent-blue/10;
-    @apply hover:-translate-y-1;
+    @apply hover:-translate-y-0.5;
+  }
+
+  .card-hover:hover {
+    border-color: rgb(var(--accent) / 0.4);
+    box-shadow:
+      0 0 20px rgb(var(--accent) / 0.08),
+      inset 0 0 0 1px rgb(var(--accent) / 0.1);
   }
 
   /* Input styles */
@@ -52,29 +106,74 @@
     @apply w-full px-4 py-2 rounded-md;
     @apply bg-dark-surface border border-dark-border;
     @apply text-dark-text-primary placeholder-dark-text-muted;
-    @apply focus:outline-none focus:ring-2 focus:ring-dark-accent-blue focus:border-transparent;
     @apply transition-all duration-200;
+    @apply focus:outline-none;
+  }
+
+  .input:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 0;
+    border-color: transparent;
   }
 
   /* Badge styles */
   .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs uppercase tracking-wider;
+    font-size: 0.7rem;
+  }
+
+  .badge::before {
+    content: '';
+    @apply w-1.5 h-1.5 rounded-full inline-block;
   }
 
   .badge-success {
     @apply bg-dark-accent-green/20 text-dark-accent-green;
   }
+  .badge-success::before {
+    @apply bg-dark-accent-green;
+  }
 
   .badge-warning {
     @apply bg-dark-accent-yellow/20 text-dark-accent-yellow;
+  }
+  .badge-warning::before {
+    @apply bg-dark-accent-yellow;
   }
 
   .badge-danger {
     @apply bg-dark-accent-red/20 text-dark-accent-red;
   }
+  .badge-danger::before {
+    @apply bg-dark-accent-red;
+  }
 
   .badge-info {
     @apply bg-dark-accent-blue/20 text-dark-accent-blue;
+  }
+  .badge-info::before {
+    @apply bg-dark-accent-blue;
+  }
+
+  /* Section heading */
+  .section-heading {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgb(var(--text-muted));
+  }
+  .section-heading::before {
+    content: '// ';
+    color: rgb(var(--accent));
+  }
+
+  /* Tech tag */
+  .tech-tag {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs;
+    background: rgb(var(--accent-alt) / 0.1);
+    color: rgb(var(--accent-alt));
+    border: 1px solid rgb(var(--accent-alt) / 0.2);
   }
 
   /* Skeleton loader */
@@ -97,10 +196,11 @@
   }
 }
 
+/* ── Utility layer ── */
 @layer utilities {
   .text-gradient {
     @apply bg-clip-text text-transparent;
-    @apply bg-gradient-to-r from-dark-accent-blue to-dark-accent-green;
+    background-image: linear-gradient(to right, rgb(var(--accent-alt)), rgb(var(--accent)));
   }
 
   /* Animations */
@@ -117,51 +217,35 @@
   }
 
   @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
   @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   @keyframes scaleIn {
-    from {
-      opacity: 0;
-      transform: scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
   }
 
   /* Glow effects */
   .glow-blue {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
   }
 
   .glow-green {
-    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
   }
 
   .glow-red {
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+    box-shadow: 0 0 20px rgba(255, 68, 68, 0.3);
   }
 
   .glow-yellow {
-    box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+    box-shadow: 0 0 20px rgba(255, 180, 0, 0.3);
   }
 
   .glow-purple {
@@ -169,49 +253,117 @@
   }
 }
 
-/* Leaflet Map Styles */
+/* ── Background grid effect ── */
+#root {
+  position: relative;
+}
+
+#root::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgb(var(--accent) / 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--accent) / 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+  animation: gridScroll 8s linear infinite;
+}
+
+#root::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 400px;
+  background: radial-gradient(ellipse at center, rgb(var(--accent) / 0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes gridScroll {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 60px, 60px 0; }
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  #root::before {
+    animation: none;
+  }
+
+  .card-hover:hover {
+    transform: none;
+  }
+}
+
+/* ── Global focus-visible ── */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+/* ── Leaflet Map Styles ── */
 .leaflet-container {
-  background: #0a0a0a !important;
+  background: var(--c-bg-primary) !important;
   font-family: inherit;
 }
 
 .leaflet-popup-content-wrapper {
-  background: #171717 !important;
-  color: #fafafa !important;
-  border: 1px solid #262626 !important;
+  background: var(--c-bg-card) !important;
+  color: var(--c-text-primary) !important;
+  border: 1px solid var(--c-border) !important;
   border-radius: 8px !important;
 }
 
 .leaflet-popup-tip {
-  background: #171717 !important;
-  border: 1px solid #262626 !important;
+  background: var(--c-bg-card) !important;
+  border: 1px solid var(--c-border) !important;
 }
 
 .leaflet-popup-close-button {
-  color: #a3a3a3 !important;
+  color: var(--c-text-secondary) !important;
 }
 
 .leaflet-popup-close-button:hover {
-  color: #fafafa !important;
+  color: var(--c-text-primary) !important;
 }
 
 .leaflet-control-zoom a {
-  background: #171717 !important;
-  color: #fafafa !important;
-  border-color: #262626 !important;
+  background: var(--c-bg-card) !important;
+  color: var(--c-text-primary) !important;
+  border-color: var(--c-border) !important;
 }
 
 .leaflet-control-zoom a:hover {
-  background: #1f1f1f !important;
+  background: var(--c-bg-card-hover) !important;
 }
 
 .leaflet-control-attribution {
-  background: rgba(23, 23, 23, 0.8) !important;
-  color: #525252 !important;
+  background: rgba(18, 18, 26, 0.8) !important;
+  color: var(--c-text-muted) !important;
 }
 
 .leaflet-control-attribution a {
-  color: #3b82f6 !important;
+  color: var(--c-accent-alt) !important;
 }
 
 /* Custom marker animation */

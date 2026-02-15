@@ -9,20 +9,20 @@ export function ThreatGauge({ score, riskLevel }: ThreatGaugeProps) {
   const getColor = (level?: string) => {
     switch (level) {
       case 'high':
-        return '#ef4444';
+        return '#ff4444';
       case 'medium':
-        return '#f59e0b';
+        return '#ffb400';
       case 'low':
-        return '#10b981';
+        return '#00ff88';
       default:
-        return '#3b82f6';
+        return '#00d4ff';
     }
   };
 
   const color = getColor(riskLevel);
   const data = [
     { value: score, fill: color },
-    { value: 100 - score, fill: '#262626' },
+    { value: 100 - score, fill: '#1e1e2e' },
   ];
 
   return (

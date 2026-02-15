@@ -55,17 +55,17 @@ interface ProviderStat {
 }
 
 const COLORS = {
-  healthy: '#10b981',
-  degraded: '#f59e0b',
-  unhealthy: '#ef4444',
-  blue: '#3b82f6',
+  healthy: '#00ff88',
+  degraded: '#ffb400',
+  unhealthy: '#ff4444',
+  blue: '#00d4ff',
   purple: '#8b5cf6',
 };
 
 const THREAT_COLORS: Record<string, string> = {
-  high: '#ef4444',
-  medium: '#f59e0b',
-  low: '#10b981',
+  high: '#ff4444',
+  medium: '#ffb400',
+  low: '#00ff88',
   unknown: '#6b7280',
 };
 
@@ -289,15 +289,15 @@ export function Dashboard() {
                       <stop offset="95%" stopColor={COLORS.healthy} stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="hour" stroke="#525252" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#525252" fontSize={10} tickLine={false} axisLine={false} />
+                  <XAxis dataKey="hour" stroke="#8b919a" fontSize={10} tickLine={false} />
+                  <YAxis stroke="#8b919a" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#171717',
-                      border: '1px solid #262626',
+                      backgroundColor: '#12121a',
+                      border: '1px solid #1e1e2e',
                       borderRadius: '8px',
                     }}
-                    labelStyle={{ color: '#a3a3a3' }}
+                    labelStyle={{ color: '#a0a8b4' }}
                   />
                   <Area
                     type="monotone"
@@ -359,11 +359,11 @@ export function Dashboard() {
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={threatChartData} layout="vertical">
-                  <XAxis type="number" stroke="#525252" fontSize={10} tickLine={false} />
+                  <XAxis type="number" stroke="#8b919a" fontSize={10} tickLine={false} />
                   <YAxis
                     type="category"
                     dataKey="name"
-                    stroke="#525252"
+                    stroke="#8b919a"
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
@@ -371,11 +371,11 @@ export function Dashboard() {
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#171717',
-                      border: '1px solid #262626',
+                      backgroundColor: '#12121a',
+                      border: '1px solid #1e1e2e',
                       borderRadius: '8px',
                     }}
-                    labelStyle={{ color: '#a3a3a3' }}
+                    labelStyle={{ color: '#a0a8b4' }}
                   />
                   <Bar dataKey="count" name="IP Records" radius={[0, 4, 4, 0]}>
                     {threatChartData.map((entry, index) => (

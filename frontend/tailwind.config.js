@@ -5,25 +5,34 @@ export default {
     extend: {
       colors: {
         dark: {
-          bg: '#0a0a0a',
-          surface: '#171717',
-          border: '#262626',
-          hover: '#1f1f1f',
+          bg: 'rgb(var(--bg-primary) / <alpha-value>)',
+          surface: 'rgb(var(--bg-card) / <alpha-value>)',
+          border: 'rgb(var(--border) / <alpha-value>)',
+          hover: 'rgb(var(--bg-card-hover) / <alpha-value>)',
           text: {
-            primary: '#fafafa',
-            secondary: '#a3a3a3',
-            muted: '#525252',
+            primary: 'rgb(var(--text-primary) / <alpha-value>)',
+            secondary: 'rgb(var(--text-secondary) / <alpha-value>)',
+            muted: 'rgb(var(--text-muted) / <alpha-value>)',
           },
           accent: {
-            blue: '#3b82f6',
-            green: '#10b981',
-            red: '#ef4444',
-            yellow: '#f59e0b',
-            purple: '#8b5cf6',
+            blue: 'rgb(var(--accent-alt) / <alpha-value>)',
+            green: 'rgb(var(--accent) / <alpha-value>)',
+            red: 'rgb(var(--danger) / <alpha-value>)',
+            yellow: 'rgb(var(--warning) / <alpha-value>)',
+            purple: 'rgb(var(--purple) / <alpha-value>)',
           },
         },
       },
       fontFamily: {
+        sans: [
+          'Inter',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'Roboto',
+          'sans-serif',
+        ],
         mono: [
           'JetBrains Mono',
           'Fira Code',
@@ -36,6 +45,13 @@ export default {
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'spin-slow': 'spin 2s linear infinite',
+        'grid-pulse': 'gridScroll 8s linear infinite',
+      },
+      keyframes: {
+        gridScroll: {
+          from: { backgroundPosition: '0 0, 0 0' },
+          to: { backgroundPosition: '0 60px, 60px 0' },
+        },
       },
     },
   },

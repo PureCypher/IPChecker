@@ -42,8 +42,8 @@ export function MapView({ latitude, longitude, city, country, ip }: MapViewProps
       className: 'custom-marker',
       html: `
         <div class="relative">
-          <div class="absolute -top-4 -left-4 w-8 h-8 bg-blue-500 rounded-full opacity-30 animate-ping"></div>
-          <div class="absolute -top-3 -left-3 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+          <div class="absolute -top-4 -left-4 w-8 h-8 rounded-full opacity-30 animate-ping" style="background: #00d4ff;"></div>
+          <div class="absolute -top-3 -left-3 w-6 h-6 rounded-full flex items-center justify-center" style="background: #00d4ff;">
             <div class="w-3 h-3 bg-white rounded-full"></div>
           </div>
         </div>
@@ -71,8 +71,8 @@ export function MapView({ latitude, longitude, city, country, ip }: MapViewProps
 
     // Add accuracy circle (approximate)
     L.circle([latitude, longitude], {
-      color: '#3b82f6',
-      fillColor: '#3b82f6',
+      color: '#00d4ff',
+      fillColor: '#00d4ff',
       fillOpacity: 0.1,
       radius: 10000, // 10km radius
       weight: 1,
@@ -94,7 +94,7 @@ export function MapView({ latitude, longitude, city, country, ip }: MapViewProps
       <div
         ref={mapRef}
         className="h-64 w-full rounded-lg overflow-hidden border border-dark-border"
-        style={{ background: '#0a0a0a' }}
+        style={{ background: '#0a0a0f' }}
       />
       <div className="absolute bottom-2 left-2 z-[1000] bg-dark-surface/90 px-2 py-1 rounded text-xs text-dark-text-muted">
         {latitude.toFixed(4)}, {longitude.toFixed(4)}

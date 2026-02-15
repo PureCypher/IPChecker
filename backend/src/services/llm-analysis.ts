@@ -133,7 +133,7 @@ export class LLMAnalysisService {
     this.openaiApiUrl = getEnvString('LLM_API_URL', 'https://api.groq.com/openai/v1');
     this.openaiApiKey = getEnvString('LLM_API_KEY', '');
     this.model = this.provider === 'openai'
-      ? getEnvString('LLM_MODEL', getEnvString('OLLAMA_MODEL', 'llama-3.3-70b-versatile'))
+      ? getEnvString('LLM_MODEL', getEnvString('OLLAMA_MODEL', 'minimax-m2.5'))
       : getEnvString('OLLAMA_MODEL', 'mistral:latest');
     this.enabled = getEnvBool('LLM_ENABLED', true);
     this.timeoutMs = getEnvNumber('LLM_TIMEOUT_MS', 30000);

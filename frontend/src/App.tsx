@@ -134,20 +134,20 @@ function AppContent() {
         position="top-right"
         toastOptions={{
           style: {
-            background: '#171717',
-            color: '#fafafa',
-            border: '1px solid #262626',
+            background: '#12121a',
+            color: '#e0e0e0',
+            border: '1px solid #1e1e2e',
           },
           success: {
             iconTheme: {
-              primary: '#10b981',
-              secondary: '#171717',
+              primary: '#00ff88',
+              secondary: '#12121a',
             },
           },
           error: {
             iconTheme: {
-              primary: '#ef4444',
-              secondary: '#171717',
+              primary: '#ff4444',
+              secondary: '#12121a',
             },
           },
         }}

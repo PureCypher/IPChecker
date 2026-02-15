@@ -1,0 +1,183 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ipchecker
+  namespace: ipchecker
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 3000
+  selector:
+    app: ipchecker
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ipchecker
+  namespace: ipchecker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ipchecker
+  template:
+    metadata:
+      labels:
+        app: ipchecker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ipchecker
+          image: 192.168.1.76:5001/ipchecker:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 3000
+          env:
+            # Credentials from Secret
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: REDIS_URL
+            - name: ADMIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: ADMIN_API_KEY
+            # Provider API keys from Secret
+            - name: IPINFO_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: IPINFO_TOKEN
+            - name: IPDATA_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: IPDATA_KEY
+            - name: ABUSEIPDB_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: ABUSEIPDB_KEY
+            - name: IPGEOLOCATION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: IPGEOLOCATION_KEY
+            - name: SHODAN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: SHODAN_KEY
+            - name: VIRUSTOTAL_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: VIRUSTOTAL_KEY
+            - name: ALIENVAULT_OTX_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: ALIENVAULT_OTX_KEY
+            - name: GREYNOISE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: GREYNOISE_KEY
+            - name: CROWDSEC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: CROWDSEC_KEY
+            - name: IPQUALITYSCORE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: IPQUALITYSCORE_KEY
+            - name: PULSEDIVE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: PULSEDIVE_KEY
+            - name: IBM_XFORCE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: IBM_XFORCE_KEY
+            - name: VPNAPI_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: VPNAPI_KEY
+            - name: PROXYCHECK_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: PROXYCHECK_KEY
+            - name: IPHUB_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: IPHUB_KEY
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: LLM_API_KEY
+            - name: OLLAMA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ipchecker-secrets
+                  key: OLLAMA_API_KEY
+            # Non-sensitive config (inline)
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: LOG_LEVEL
+              value: info
+            - name: REQUIRE_API_KEY
+              value: "false"
+            - name: LLM_ENABLED
+              value: "false"
+            - name: LLM_PROVIDER
+              value: openai
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 40
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 250m
+            limits:
+              memory: 512Mi
+              cpu: 500m
